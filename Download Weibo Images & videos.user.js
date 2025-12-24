@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Download Weibo Images & Videos (Only support new version weibo UI)
 // @name:zh-CN   下载微博图片和视频（仅支持新版界面）
-// @version      1.3.6.6
+// @version      1.3.8
 // @description  Download images and videos from new version weibo UI webpage.
 // @description:zh-CN 从新版微博界面下载图片和视频。
 // @author       OWENDSWANG
@@ -105,7 +105,7 @@
 /*5*/   '确定',
 /*6*/   '下载设置',
 /*7*/   '下载文件名称',
-/*8*/   '{original} - 原文件名\n{username} - 原博主名称\n{userid} - 原博主ID\n{mblogid} - 原博mblogid\n{uid} - 原博uid\n{ext} - 文件后缀\n{index} - 图片序号\n{YYYY} {MM} {DD} {HH} {mm} {ss} - 原博发布时\n间的年份、月份、日期、小时、分钟、秒，可\n分开独立使用\n{content} - 博文内容（最多前25个字符）',
+/*8*/   '{original} - 原文件名\n{username} - 原博主名称\n{userid} - 原博主ID\n{mblogid} - 原博mblogid\n{uid} - 原博uid\n{region} - 原博发文地区\n{ext} - 文件后缀\n{index} - 图片序号\n{YYYY} {MM} {DD} {HH} {mm} {ss} - 原博发布时\n间的年份、月份、日期、小时、分钟、秒，可\n分开独立使用\n{content} - 博文内容（最多前25个字符）',
 /*9*/   '下载队列',
 /*10*/  '重试',
 /*11*/  '关闭',
@@ -115,7 +115,7 @@
 /*15*/  '与“下载文件名称”规则相同，但{original}、{ext}、{index}除外',
 /*16*/  '单独设置转发微博下载文件名称',
 /*17*/  '转发微博下载文件名称',
-/*18*/  '除“下载文件名”规则外，额外标签如下：\n{re.mblogid} - 转博mblogid\n{re.username} - 转发博主名称\n{re.userid} - 转发博主ID\n{re.uid} - 转博uid\n{re.content} - 转发博文内容（最多前25个字符）\n{re.YYYY} {re.MM} {re.DD} {re.HH} {re.mm} {re.ss}\n - 原博发布时间的年份、月份、日期、小时、\n分钟、秒，可分开独立使用',
+/*18*/  '除“下载文件名”规则外，额外标签如下：\n{re.mblogid} - 转博mblogid\n{re.username} - 转发博主名称\n{re.userid} - 转发博主ID\n{re.uid} - 转博uid\n{re.region} - 转博发文地区\n{re.content} - 转发博文内容（最多前25个字符）\n{re.YYYY} {re.MM} {re.DD} {re.HH} {re.mm} {re.ss}\n - 原博发布时间的年份、月份、日期、小时、\n分钟、秒，可分开独立使用',
 /*19*/  '转发微博打包文件名',
 /*20*/  '与“转发微博下载文件名称”规则相同，但{original}、{ext}、{index}除外',
 /*21*/  '使用Aria2c远程下载',
@@ -563,7 +563,7 @@
         }
     }
 
-    function getName(nameSetting, originalName, ext, userName, userId, postId, postUid, index, postTime, content, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetContent) {
+    function getName(nameSetting, originalName, ext, userName, userId, postId, postUid, index, postTime, content, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetContent, retweetRegion) {
         let setName = nameSetting;
         setName = setName.replace('{ext}', ext);
         setName = setName.replace('{original}', originalName);
@@ -573,6 +573,7 @@
         setName = setName.replace('{uid}', postUid);
         setName = setName.replace('{index}', index);
         setName = setName.replace('{content}', content.substring(0, 25));
+        setName = setName.replace('{region}', region);
         let YYYY, MM, DD, HH, mm, ss;
         const postAt = new Date(postTime);
         if (postTime) {
@@ -595,6 +596,7 @@
             setName = setName.replace('{re.userid}', retweetUserId);
             setName = setName.replace('{re.uid}', retweetPostUid);
             setName = setName.replace('{re.content}', retweetContent.substring(0, 25));
+            setName = setName.replace('{re.region}', retweetRegion);
             let reYYYY, reMM, reDD, reHH, remm, ress;
             const retweetPostAt = new Date(retweetPostTime);
             if (retweetPostTime) {
@@ -728,7 +730,7 @@ self.onmessage = async (e) => {
         }
     }
 
-    async function handleVideo(mediaInfo, padLength, userName, userId, postId, postUid, index, postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText) {
+    async function handleVideo(mediaInfo, padLength, userName, userId, postId, postUid, index, postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion) {
         const newList = [];
         let largeVidUrl = mediaInfo.playback_list ? mediaInfo.playback_list[0].play_info.url : ( mediaInfo.mp4_hd_url || mediaInfo.stream_url_hd || mediaInfo.stream_url );
         // console.log('largeVidUrl: ', largeVidUrl);
@@ -753,7 +755,7 @@ self.onmessage = async (e) => {
         vidName = vidName.split('/')[vidName.split('/').length - 1].split('?')[0];
         let originalName = vidName.split('.')[0];
         let ext = vidName.split('.')[1];
-        const setName = getName((GM_getValue('retweetMode', false) && retweetPostId) ? GM_getValue('retweetFileName', '{original}.{ext}') : GM_getValue('dlFileName', '{original}.{ext}'), originalName, ext, userName, userId, postId, postUid, index.toString().padStart(padLength, '0'), postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText);
+        const setName = getName((GM_getValue('retweetMode', false) && retweetPostId) ? GM_getValue('retweetFileName', '{original}.{ext}') : GM_getValue('dlFileName', '{original}.{ext}'), originalName, ext, userName, userId, postId, postUid, index.toString().padStart(padLength, '0'), postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion);
         newList.push({ url: largeVidUrl, name: setName, headerFlag: true });
         if(GM_getValue('dlVidCov', true) && mediaInfo.hasOwnProperty('big_pic_info')) {
             let picUrl = mediaInfo.big_pic_info.pic_big.url;
@@ -761,24 +763,23 @@ self.onmessage = async (e) => {
             let picName = largePicUrl.split('/')[largePicUrl.split('/').length - 1].split('?')[0];
             let originalName = picName.split('.')[0];
             let ext = picName.split('.')[1];
-            const setName = getName((GM_getValue('retweetMode', false) && retweetPostId) ? GM_getValue('retweetFileName', '{original}.{ext}') : GM_getValue('dlFileName', '{original}.{ext}'), originalName, ext, userName, userId, postId, postUid, index.toString().padStart(padLength, '0'), postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText);
+            const setName = getName((GM_getValue('retweetMode', false) && retweetPostId) ? GM_getValue('retweetFileName', '{original}.{ext}') : GM_getValue('dlFileName', '{original}.{ext}'), originalName, ext, userName, userId, postId, postUid, index.toString().padStart(padLength, '0'), postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion);
             newList.push({url: largePicUrl, name: setName, headerFlag: true });
         }
         return newList;
     }
 
-    function handlePic(pic, padLength, userName, userId, postId, postUid, index, postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText) {
+    function handlePic(pic, padLength, userName, userId, postId, postUid, index, postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion) {
         let newList = [];
         let picId = pic.pic_id;
         let picUrl = pic.largest?.url || pic.pic_big?.url;
         let picSize = picUrl.split('/')[3];
         let largePicUrl = picUrl.replace('/' + picSize + '/', GM_getValue('rmWtrMrk', false) ? '/oslarge/' : '/large/');
-        let downloadUrl = GM_getValue('rmWtrMrk', false) ? largePicUrl : ('https://weibo.com/ajax/common/download?pid=' + picId);
         let picName = largePicUrl.split('/')[largePicUrl.split('/').length - 1].split('?')[0];
         let originalName = picName.split('.')[0];
         let ext = picName.split('.')[1];
-        const setName = getName((GM_getValue('retweetMode', false) && retweetPostId) ? GM_getValue('retweetFileName', '{original}.{ext}') : GM_getValue('dlFileName', '{original}.{ext}'), originalName, ext, userName, userId, postId, postUid, index.toString().padStart(padLength, '0'), postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText);
-        newList.push({ url: downloadUrl, name: setName, headerFlag: true });
+        const setName = getName((GM_getValue('retweetMode', false) && retweetPostId) ? GM_getValue('retweetFileName', '{original}.{ext}') : GM_getValue('dlFileName', '{original}.{ext}'), originalName, ext, userName, userId, postId, postUid, index.toString().padStart(padLength, '0'), postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion);
+        newList.push({ url: largePicUrl, name: setName, headerFlag: true });
         if(pic.hasOwnProperty('video')) {
             let videoUrl = pic.video;
             let videoName = videoUrl.split('%2F')[videoUrl.split('%2F').length - 1].split('?')[0];
@@ -787,7 +788,7 @@ self.onmessage = async (e) => {
             // console.log(videoUrl, videoName);
             let originalName = videoName.split('.')[0];
             let ext = videoName.split('.')[1];
-            const setName = getName((GM_getValue('retweetMode', false) && retweetPostId) ? GM_getValue('retweetFileName', '{original}.{ext}') : GM_getValue('dlFileName', '{original}.{ext}'), originalName, ext, userName, userId, postId, postUid, index.toString().padStart(padLength, '0'), postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText);
+            const setName = getName((GM_getValue('retweetMode', false) && retweetPostId) ? GM_getValue('retweetFileName', '{original}.{ext}') : GM_getValue('dlFileName', '{original}.{ext}'), originalName, ext, userName, userId, postId, postUid, index.toString().padStart(padLength, '0'), postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion);
             newList.push({ url: videoUrl, name: setName, headerFlag: true });
         }
         return newList;
@@ -800,9 +801,9 @@ self.onmessage = async (e) => {
         } else {
             resJson = await httpRequest('https://' + location.host + '/ajax/statuses/show?id=' + id);
         }
-        // console.log(resJson);
+        console.log(resJson);
         let status = resJson;
-        let retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText;
+        let retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion;
         if(resJson.hasOwnProperty('retweeted_status')) {
             status = resJson.retweeted_status;
             retweetPostId = resJson.mblogid;
@@ -811,6 +812,7 @@ self.onmessage = async (e) => {
             retweetPostUid = resJson.idstr;
             retweetPostTime = resJson.created_at;
             retweetText = resJson.text_raw;
+            retweetRegion = resJson.region_name ? resJson.region_name.split(/\s/).pop() : '';
         }
         const postId = status.mblogid;
         const picInfos = status.pic_infos;
@@ -822,6 +824,7 @@ self.onmessage = async (e) => {
         const postTime = status.created_at;
         const text = status.text_raw;
         const pageInfo = status.page_info || resJson.page_info;
+        const region = status.region_name ? status.region_name.split(/\s/).pop() : '';
         let downloadList = [];
         if (picInfos) {
             // console.log('download images');
@@ -830,12 +833,12 @@ self.onmessage = async (e) => {
                 let index = 0;
                 for (const [id, pic] of Object.entries(picInfos)) {
                     index += 1;
-                    downloadList = downloadList.concat(handlePic(pic, padLength, userName, userId, postId, postUid, index, postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText));
+                    downloadList = downloadList.concat(handlePic(pic, padLength, userName, userId, postId, postUid, index, postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion));
                 }
             } else {
                 // console.log(idx, picInfos);
                 const pic = Object.entries(picInfos)[idx][1];
-                downloadList = downloadList.concat(handlePic(pic, padLength, userName, userId, postId, postUid, idx + 1, postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText));
+                downloadList = downloadList.concat(handlePic(pic, padLength, userName, userId, postId, postUid, idx + 1, postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion));
             }
         }
         /*if (picIds) {
@@ -843,7 +846,7 @@ self.onmessage = async (e) => {
             let padLength = picIds.length.toString().length;
             // console.log(idx, picInfos);
             const picId = picIds[idx];
-            downloadList = downloadList.concat(handlePic(picId, padLength, userName, userId, postId, postUid, idx + 1, postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText));
+            downloadList = downloadList.concat(handlePic(picId, padLength, userName, userId, postId, postUid, idx + 1, postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion));
         }*/
         if (mixMediaInfo && mixMediaInfo.items) {
             // console.log('mix media');
@@ -854,147 +857,54 @@ self.onmessage = async (e) => {
                 for (const [id, media] of Object.entries(mixMediaInfo.items)) {
                     index += 1;
                     if(media.type === 'video') {
-                        downloadList = downloadList.concat(await handleVideo(media.data.media_info, padLength, userName, userId, postId, postUid, index, postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText));
+                        downloadList = downloadList.concat(await handleVideo(media.data.media_info, padLength, userName, userId, postId, postUid, index, postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion));
                         if (GM_getValue('dlVidCov', true)) {
-                            downloadList = downloadList.concat(handlePic(media.data.pic_info, padLength, userName, userId, postId, postUid, index, postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText));
+                            downloadList = downloadList.concat(handlePic(media.data.pic_info, padLength, userName, userId, postId, postUid, index, postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion));
                         }
                     } else if (media.type === 'pic') {
-                        downloadList = downloadList.concat(handlePic(media.data, padLength, userName, userId, postId, postUid, index, postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText));
+                        downloadList = downloadList.concat(handlePic(media.data, padLength, userName, userId, postId, postUid, index, postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion));
                     }
                 }
             } else {
                 const media = Object.entries(mixMediaInfo.items)[idx][1];
                 if(media.type === 'video') {
-                    downloadList = downloadList.concat(await handleVideo(media.data.media_info, padLength, userName, userId, postId, postUid, idx + 1, postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText));
+                    downloadList = downloadList.concat(await handleVideo(media.data.media_info, padLength, userName, userId, postId, postUid, idx + 1, postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion));
                     if(GM_getValue('dlVidCov', true)) {
-                        downloadList = downloadList.concat(handlePic(media.data.pic_info, padLength, userName, userId, postId, postUid, idx + 1, postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText));
+                        downloadList = downloadList.concat(handlePic(media.data.pic_info, padLength, userName, userId, postId, postUid, idx + 1, postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion));
                     }
                 } else if (media.type === 'pic') {
-                    downloadList = downloadList.concat(handlePic(media.data, padLength, userName, userId, postId, postUid, idx + 1, postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText));
+                    downloadList = downloadList.concat(handlePic(media.data, padLength, userName, userId, postId, postUid, idx + 1, postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion));
                 }
             }
         }
         if (pageInfo && pageInfo.media_info) {
-            downloadList = downloadList.concat(await handleVideo(pageInfo.media_info, 0, userName, userId, postId, postUid, 0, postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText));
+            downloadList = downloadList.concat(await handleVideo(pageInfo.media_info, 0, userName, userId, postId, postUid, 0, postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion));
         }
-        const packName = getName((GM_getValue('retweetMode', false) && retweetPostId) ? GM_getValue('retweetPackFileName', '{mblogid}.zip') : GM_getValue('packFileName', '{mblogid}.zip'), '{original}', '{ext}', userName, userId, postId, postUid, '{index}', postTime, text, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText);
+        const packName = getName((GM_getValue('retweetMode', false) && retweetPostId) ? GM_getValue('retweetPackFileName', '{mblogid}.zip') : GM_getValue('packFileName', '{mblogid}.zip'), '{original}', '{ext}', userName, userId, postId, postUid, '{index}', postTime, text, region, retweetPostId, retweetUserName, retweetUserId, retweetPostUid, retweetPostTime, retweetText, retweetRegion);
         return [downloadList, packName];
     }
 
-    const MEDIA_IMAGE_SELECTOR = 'img.woo-picture-img,img.picture_focusImg_1z5In,img.picture-viewer_pic_37YQ3,img[class*="_focusImg_"]';
-    const MEDIA_VIDEO_SELECTOR = 'video.picture-viewer_pic_37YQ3,video[class*="_focusVideo_"],div[class*="_videoBox_"] video,div[class*="_feedVideo_"] video,video.vjs-tech';
-
-    function extractPostId(url) {
-        if (!url) {
-            return null;
-        }
-        const clean = url.split('?')[0];
-        const parts = clean.split('/').filter(Boolean);
-        return parts.length ? parts[parts.length - 1] : null;
-    }
-
-    function findTimeAnchor(scope) {
-        const target = scope || document;
-        return target.querySelector('a[class*="_time_"], a[class*="head-info_time"], a.head-info_time_6sFQg');
-    }
-
-    function findRetweetAnchor(card) {
-        const retweetArea = card.querySelector('div[contenttype="retweet"]') || card.querySelector('div.retweet');
-        return findTimeAnchor(retweetArea);
-    }
-
-    function resolveActionTarget(card) {
+    function addDlBtn(card) {
+        // console.log('add download button');
         const footer = card.querySelectorAll('footer')[1] || card.querySelector('footer');
-        const legacyTarget = footer?.firstChild?.firstChild?.firstChild;
-        if (legacyTarget) {
-            return { mode: 'legacy', container: legacyTarget };
-        }
-        const likeButton = card.querySelector('button.woo-like-main:not(.download-button)');
-        if (!likeButton) {
-            return null;
-        }
-        const likeItem = likeButton.closest('.woo-box-item-flex');
-        if (!likeItem || !likeItem.parentElement) {
-            return null;
-        }
-        return {
-            mode: 'modern',
-            container: likeItem.parentElement,
-            sampleItem: likeItem,
-            sampleButton: likeButton
-        };
-    }
-
-    function enforceActionLayout(actionContainer) {
-        if (!actionContainer) {
-            return;
-        }
-        actionContainer.style.display = actionContainer.style.display || 'flex';
-        actionContainer.style.flexDirection = 'row';
-        actionContainer.style.flexWrap = 'nowrap';
-        actionContainer.style.alignItems = actionContainer.style.alignItems || 'center';
-        actionContainer.querySelectorAll('.woo-box-alignCenter, .woo-box-flex, footer>div').forEach((block) => {
-            block.style.display = block.style.display || 'flex';
-            block.style.flexDirection = 'row';
-            block.style.flexWrap = 'nowrap';
-            block.style.alignItems = block.style.alignItems || 'center';
-        });
-    }
-
-    function addDlBtn(card, actionInfo = null) {
-        if (card.querySelector('button.download-button')) {
-            return;
-        }
-        const info = actionInfo || resolveActionTarget(card);
-        if (!info) {
-            return;
-        }
-        enforceActionLayout(info.container);
         const header = card.querySelector('header');
-        const postLink = findTimeAnchor(header || card);
-        const postId = extractPostId(postLink?.href);
-        if (!postId) {
-            return;
+        const postLink = header.querySelector('.head-info_time_6sFQg,._time_1tpft_33');
+        const postId = postLink.href.split('/')[postLink.href.split('/').length - 1];
+        let retweetPostId;
+        const retweetPostLink = card.querySelector('div.retweet a.head-info_time_6sFQg');
+        if (retweetPostLink) {
+            retweetPostId = retweetPostLink.href.split('/')[retweetPostLink.href.split('/').length - 1];
         }
-        const retweetLink = findRetweetAnchor(card);
-        const retweetPostId = extractPostId(retweetLink?.href);
-        const dlStatusKey = 'wbDl-' + postId;
-
-        let container;
-        let wrapper;
-
-        if (info.mode === 'legacy') {
-            container = document.createElement('div');
-            container.className = 'woo-box-item-flex toolbar_item_1ky_D toolbar_cursor_34j5V download-toolbar-item';
-            wrapper = document.createElement('div');
-            wrapper.className = 'woo-box-flex woo-box-alignCenter woo-box-justifyCenter toolbar_like_20yPI toolbar_likebox_1rLfZ toolbar_wrap_np6Ug download-toolbar-wrap';
-        } else {
-            const prototypeItem = info.sampleItem.cloneNode(false);
-            prototypeItem.classList.add('download-toolbar-item');
-            prototypeItem.innerHTML = '';
-            prototypeItem.removeAttribute('attrs');
-            container = prototypeItem;
-
-            const prototypeWrap = info.sampleItem.querySelector('.woo-box-flex');
-            const wrap = prototypeWrap ? prototypeWrap.cloneNode(false) : document.createElement('div');
-            wrap.innerHTML = '';
-            wrap.classList.add('download-toolbar-wrap');
-            wrap.removeAttribute('attrs');
-            wrapper = wrap;
-        }
-
-        const templateButton = info.mode === 'modern' ? info.sampleButton.cloneNode(false) : document.createElement('button');
-        templateButton.className = info.mode === 'modern' ? info.sampleButton.className : 'woo-like-main toolbar_btn_Cg9tz';
-        templateButton.classList.add('download-button');
-        templateButton.removeAttribute('data-click');
-        templateButton.setAttribute('tabindex', '0');
-        templateButton.setAttribute('title', '下载');
-        const downloaded = !!GM_getValue(dlStatusKey, null);
-        const iconId = downloaded ? '#woo_svg_download' : '#woo_svg_download_o';
-        const labelText = downloaded ? '已下载' : '下载';
-        templateButton.innerHTML = '<span class="woo-like-iconWrap"><svg class="woo-like-icon"><use xlink:href="' + iconId + '"></use></svg></span><span class="woo-like-count">' + labelText + '</span>';
-
-        templateButton.addEventListener('click', async (event) => {
+        let dlBtnDiv = document.createElement('div');
+        dlBtnDiv.className = 'woo-box-item-flex toolbar_item_1ky_D toolbar_cursor_34j5V _item_198pe_23 _cursor_198pe_184';
+        let divInDiv = document.createElement('div');
+        divInDiv.className = 'woo-box-flex woo-box-alignCenter woo-box-justifyCenter toolbar_like_20yPI toolbar_likebox_1rLfZ toolbar_wrap_np6Ug _likebox_198pe_50 _wrap_198pe_137';
+        let dlBtn = document.createElement('button');
+        dlBtn.className = 'woo-like-main toolbar_btn_Cg9tz _btn_198pe_22 download-button';
+        dlBtn.setAttribute('tabindex', '0');
+        dlBtn.setAttribute('title', '下载');
+        dlBtn.innerHTML = '<span class="woo-like-iconWrap"><svg class="woo-like-icon" viewBox="0 0 100 100"><path d="m25,0l50,0l0,50l25,0l-50,50l-50,-50l25,0l0,-50" fill="currentColor"></path><path d="m30,5l40,0l0,50l20,0l-40,40l-40,-40l20,0l0,-50" fill="white"></path></svg></span><span class="woo-like-count">' + (GM_getValue('wbDl-' + (retweetPostId || postId), null) ? '已下载' : '下载') + '</span>';
+        dlBtn.addEventListener('click', async function(event) {
             event.preventDefault();
             const dlBtnText = templateButton.querySelector('span.woo-like-count');
             if (dlBtnText) {
@@ -1005,16 +915,24 @@ self.onmessage = async (e) => {
             GM_setValue(dlStatusKey, true);
             setDownloadButtonState(templateButton, true);
         });
-
-        wrapper.appendChild(templateButton);
-        container.appendChild(wrapper);
-        info.container.appendChild(container);
+        divInDiv.appendChild(dlBtn);
+        dlBtnDiv.appendChild(divInDiv);
+        footer.querySelector('div > div > div').appendChild(dlBtnDiv);
+        // console.log('added download button');
     }
 
     function addSingleDlBtn(img, idx = 0) {
-        const card = img.closest('article.woo-panel-main') || img.closest('.wbpro-feed-content')?.closest('article') || img.closest('[role="article"]');
-        if (!card) {
-            return;
+        // console.log('addSingleDlBtn: ', img);
+        const card = img.closest('article.woo-panel-main');
+        const imgCtn = img.parentElement;
+        const dlBtn = document.createElement('div');
+        const header = card.getElementsByTagName('header')[0];
+        const postLink = header.querySelector('.head-info_time_6sFQg,._time_1tpft_33');
+        const postId = postLink.href.split('/')[postLink.href.split('/').length - 1];
+        let retweetPostId;
+        const retweetPostLink = card.querySelector('div.retweet a.head-info_time_6sFQg');
+        if (retweetPostLink) {
+            retweetPostId = retweetPostLink.href.split('/')[retweetPostLink.href.split('/').length - 1];
         }
         const header = card.querySelector('header');
         const postLink = findTimeAnchor(header || card);
@@ -1090,11 +1008,7 @@ self.onmessage = async (e) => {
         aInLi.setAttribute('href', 'javascript:void(0);');
         let dlBtn = document.createElement('button');
         dlBtn.className = 'woo-like-main toolbar_btn download-button';
-        const dlStatusKey = 'wbDl-' + postId;
-        const downloaded = !!GM_getValue(dlStatusKey, null);
-        const iconId = downloaded ? '#woo_svg_download' : '#woo_svg_download_o';
-        const labelText = downloaded ? '已下载' : '下载';
-        dlBtn.innerHTML = '<span class="woo-like-iconWrap"><svg class="woo-like-icon"><use xlink:href="' + iconId + '"></use></svg></span><span class="woo-like-count">' + labelText + '</span>';
+        dlBtn.innerHTML = '<span class="woo-like-iconWrap"><svg class="woo-like-icon" viewBox="0 0 100 100"><path d="m25,0l50,0l0,50l25,0l-50,50l-50,-50l25,0l0,-50" fill="currentColor"></path><path d="m30,5l40,0l0,50l20,0l-40,40l-40,-40l20,0l0,-50" fill="white"></path></svg></span><span class="woo-like-count">' + (GM_getValue('wbDl-' + (retweetPostId || postId), null) ? '已下载' : '下载') + '</span>';
         aInLi.addEventListener('click', function(event) { event.preventDefault(); });
         dlBtn.addEventListener('click', async function(event) {
             event.preventDefault();
@@ -1153,23 +1067,26 @@ self.onmessage = async (e) => {
     }
 
     function handleCard(card) {
-        const actionInfo = resolveActionTarget(card);
-        if (!actionInfo) {
-            return;
-        }
-
-        const images = card.querySelectorAll(MEDIA_IMAGE_SELECTOR);
-        const videos = card.querySelectorAll(MEDIA_VIDEO_SELECTOR);
-        const mediaNodes = card.querySelectorAll(MEDIA_IMAGE_SELECTOR + ',' + MEDIA_VIDEO_SELECTOR);
-
-        if (!card.querySelector('button.download-button') && (images.length > 0 || videos.length > 0)) {
-            addDlBtn(card, actionInfo);
-        }
-
-        if (mediaNodes.length > 1) {
-            mediaNodes.forEach((node, idx) => {
-                if (node.parentElement && node.parentElement.getElementsByClassName('download-single-button').length === 0) {
-                    addSingleDlBtn(node, idx);
+        // console.log(card);
+        const footer = card.querySelectorAll('footer')[1] || card.querySelector('footer');
+        const imgs = card.querySelectorAll('img.woo-picture-img,img.picture_focusImg_1z5In,img._focusImg_a2k8z_23,img.picture-viewer_pic_37YQ3,video.picture-viewer_pic_37YQ3,img._pic_1jk00_34');
+        // console.log(imgs);
+        if (footer) {
+            if (footer.getElementsByClassName('download-button').length > 0) {
+                // console.log('already added download button');
+            } else {
+                // console.log(footer.parentElement);
+                let added = false;
+                if (imgs.length > 0) {
+                    addDlBtn(card);
+                    added = true;
+                    if (imgs.length > 1) {
+                        for (const [ idx, img ] of Object.entries(imgs)) {
+                            if (img.parentElement.getElementsByClassName('download-single-button').length === 0) {
+                                addSingleDlBtn(img, parseInt(idx));
+                            }
+                        }
+                    }
                 }
             });
         }
@@ -1818,33 +1735,13 @@ self.onmessage = async (e) => {
         window.addEventListener('resize', resizeWindow);
     }
 
-    let svg = document.getElementById('__SVG_SPRITE_NODE__');
-    if (!svg) {
-        svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.id = '__SVG_SPRITE_NODE__';
-        svg.setAttribute('aria-hidden', 'true');
-        svg.style.position = 'absolute';
-        svg.style.width = '0';
-        svg.style.height = '0';
-        svg.style.overflow = 'hidden';
-        (document.body || document.documentElement).appendChild(svg);
-    }
-    let symbol = svg.querySelector('#woo_svg_download');
-    if (!symbol) {
-        symbol = document.createElementNS('http://www.w3.org/2000/svg', 'symbol');
-        symbol.id = 'woo_svg_download';
-        symbol.setAttribute('viewBox', '0 0 100 100');
-        symbol.innerHTML = '<path d="m25,0l50,0l0,50l25,0l-50,50l-50,-50l25,0l0,-50" fill="currentColor"></path><path d="m30,5l40,0l0,50l20,0l-40,40l-40,-40l20,0l0,-50" fill="white"></path>';
-        svg.appendChild(symbol);
-    }
-
-    let outlineSymbol = svg.querySelector('#woo_svg_download_o');
-    if (!outlineSymbol) {
-        outlineSymbol = document.createElementNS('http://www.w3.org/2000/svg', 'symbol');
-        outlineSymbol.id = 'woo_svg_download_o';
-        outlineSymbol.setAttribute('viewBox', '0 0 100 100');
-        outlineSymbol.innerHTML = '<path d="M25 0h50v50h25L50 100 0 50h25z" fill="none" stroke="currentColor" stroke-width="10" stroke-linejoin="round"></path>';
-        svg.appendChild(outlineSymbol);
+/*
+    if(addDlBtnMode == 0) {
+        showModal();
+    } else if (addDlBtnMode == 1) {
+        addStartButton();
+    } else if (addDlBtnMode == 2) {
+        addEventListener();
     }
     if(GM_getValue('isSet', null) !== settingVersion) {
         showModal();
@@ -1862,15 +1759,15 @@ self.onmessage = async (e) => {
                 if (mutation.type === 'childList' && mutation.target.tagName === 'DIV' && (mutation.target.className.includes('wbpro-feed-content') || mutation.target.className.includes('Feed_retweet_JqZJb'))) {
                     for (const node of mutation.addedNodes) {
                         // console.log(node);
-                        const imgs = node.querySelectorAll(MEDIA_IMAGE_SELECTOR + ',' + MEDIA_VIDEO_SELECTOR);
+                        const imgs = node.querySelectorAll('img.woo-picture-img,img.picture_focusImg_1z5In,img._focusImg_a2k8z_23,img.picture-viewer_pic_37YQ3,video.picture-viewer_pic_37YQ3,img._pic_1jk00_34');
                         // console.log(imgs);
                         for (const [ idx, img ] of Object.entries(imgs)) {
-                            if (img.parentElement && img.parentElement.getElementsByClassName('download-single-button').length === 0) {
-                                const className = typeof img.className === 'string' ? img.className : (img.className?.baseVal || '');
-                                if (className.includes('picture-viewer_pic_37YQ3') || className.includes('_focusVideo_')) {
-                                    const previews = node.querySelectorAll('div.picture-viewer_preview_2wOSq');
+                            if (img.parentElement.getElementsByClassName('download-single-button').length === 0) {
+                                if (img.className.includes('picture-viewer_pic_37YQ3') || img.className.includes('_pic_1jk00_34')) {
+                                    // console.log('enlarged img: ',img);
+                                    const previews = node.querySelectorAll('div.picture-viewer_preview_2wOSq,div._preview_1jk00_47');
                                     for (const [ index, preview ] of Object.entries(previews)) {
-                                        if (preview.className.includes('picture-viewer_cur_anUEY')) {
+                                        if (preview.className.includes('picture-viewer_cur_anUEY') || preview.className.includes('_cur_1jk00_60')) {
                                             addSingleDlBtn(img, parseInt(index));
                                         }
                                     }
@@ -1891,6 +1788,7 @@ self.onmessage = async (e) => {
                 // console.log(mutation.target);
                 if (mutation.type === 'childList' && mutation.target.tagName === 'DIV' && (mutation.target.getAttribute('node-type') === 'feed_list_media_disp' || mutation.target.getAttribute('node-type') === 'imgBox' || mutation.target.tagName === 'IMG')) {
                     for (const node of mutation.addedNodes) {
+                        // console.log(node);
                         if (node.tagName === 'IMG') {
                             const imgPrevBox = node.closest('div[node-type="imagesBox"]');
                             if (imgPrevBox) {
@@ -2010,7 +1908,7 @@ self.onmessage = async (e) => {
                             if (retweetPostLink) {
                                 retweetPostId = retweetPostLink.href.split('/')[retweetPostLink.href.split('/').length - 1];
                             }
-                            console.log(postId, retweetPostId);
+                            // console.log(postId, retweetPostId);
                             downloadButton.textContent = '下载中';
                             const [downloadList, packName] = await handlePostDownloadById(postId);
                             await handleDownloadList(downloadList, packName);
