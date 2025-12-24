@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Download Weibo Images & Videos (Only support new version weibo UI)
 // @name:zh-CN   下载微博图片和视频（仅支持新版界面）
-// @version      1.3.8
+// @version      1.3.8.1
 // @description  Download images and videos from new version weibo UI webpage.
 // @description:zh-CN 从新版微博界面下载图片和视频。
 // @author       OWENDSWANG
@@ -17,7 +17,7 @@
 // @icon         https://weibo.com/favicon.ico
 // @license      MIT
 // @homepage     https://greasyfork.org/scripts/430877
-// @supportURL   https://github.com/owendswang/Download-Weibo-Images-Videos
+// @supportURL   https://github.com/firo1603/Download-Weibo-Images-Videos
 // @grant        GM_xmlhttpRequest
 // @grant        GM_notification
 // @grant        GM_getValue
@@ -32,8 +32,7 @@
 // @namespace    http://tampermonkey.net/
 // @run-at       document-end
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jszip/3.9.1/jszip.min.js
-// @downloadURL https://update.greasyfork.org/scripts/430877/Download%20Weibo%20Images%20%20Videos%20%28Only%20support%20new%20version%20weibo%20UI%29.user.js
-// @updateURL https://update.greasyfork.org/scripts/430877/Download%20Weibo%20Images%20%20Videos%20%28Only%20support%20new%20version%20weibo%20UI%29.meta.js
+
 // ==/UserScript==
 
 (function() {
@@ -197,6 +196,15 @@
     }
     progressBar.appendChild(progressCloseBtn);
     // downloadQueueCard.appendChild(progressBar);
+
+    const downloadIconFilled = '<span class="woo-like-iconWrap"><svg class="woo-like-icon" viewBox="0 0 100 100"><path d="m25,0l50,0l0,50l25,0l-50,50l-50,-50l25,0l0,-50" fill="currentColor"></path><path d="m30,5l40,0l0,50l20,0l-40,40l-40,-40l20,0l0,-50" fill="white"></path></svg></span>';
+    const downloadIconOutline = '<span class="woo-like-iconWrap"><svg class="woo-like-icon" viewBox="0 0 100 100"><path d="m25,0l50,0l0,50l25,0l-50,50l-50,-50l25,0l0,-50" fill="none" stroke="currentColor" stroke-width="8"></path><path d="m30,5l40,0l0,50l20,0l-40,40l-40,-40l20,0l0,-50" fill="none" stroke="white" stroke-width="6"></path></svg></span>';
+
+    function renderDownloadButton(btn, downloaded, label) {
+        const textLabel = label || (downloaded ? '已下载' : '下载');
+        btn.innerHTML = (downloaded ? downloadIconFilled : downloadIconOutline) + '<span class="woo-like-count">' + textLabel + '</span>';
+        btn.dataset.downloaded = downloaded ? 'true' : 'false';
+    }
 
     function saveAs(blob, name) {
         const link = document.createElement("a");
@@ -730,9 +738,26 @@
             // console.log('responseList', responseList);
             // console.log('zip', zip);
             // console.log('generateAsync', zip.generateAsync());
-            const content = await zip.generateAsync({ type: 'blob', streamFiles: true }/*, function({ percent, currentFile }) { console.log(percent); }*/);
-            // console.log('content', content);
-            if (zip.files && Object.keys(zip.files).length > 0) saveAs(content, packName);
+            if (zip.files && Object.keys(zip.files).length > 0) {
+                downloadQueueTitle.style.display = 'block';
+                let zipProgress = downloadQueueCard.appendChild(progressBar.cloneNode(true));
+                zipProgress.firstChild.textContent = packName + ' [0%]';
+                const content = await zip.generateAsync({ type: 'blob', streamFiles: true }, function({ percent }) {
+                    const pct = Math.min(100, percent);
+                    zipProgress.style.background = 'linear-gradient(to right, green ' + pct + '%, transparent ' + pct + '%)';
+                    zipProgress.firstChild.textContent = packName + ' [' + pct.toFixed(0) + '%]';
+                });
+                const timeout = setTimeout(() => {
+                    zipProgress.remove();
+                    if(downloadQueueCard.childElementCount == 1) downloadQueueTitle.style.display = 'none';
+                }, 1000);
+                zipProgress.lastChild.onclick = function(e) {
+                    clearTimeout(timeout);
+                    this.parentNode.remove();
+                    if(downloadQueueCard.childElementCount == 1) downloadQueueTitle.style.display = 'none';
+                };
+                saveAs(content, packName);
+            }
         } else {
             let promises = downloadList.map(function(item, idx) {
                 return downloadWrapper(item.url, item.name, item.headerFlag);
@@ -914,15 +939,16 @@
         dlBtn.className = 'woo-like-main toolbar_btn_Cg9tz _btn_198pe_22 download-button';
         dlBtn.setAttribute('tabindex', '0');
         dlBtn.setAttribute('title', '下载');
-        dlBtn.innerHTML = '<span class="woo-like-iconWrap"><svg class="woo-like-icon" viewBox="0 0 100 100"><path d="m25,0l50,0l0,50l25,0l-50,50l-50,-50l25,0l0,-50" fill="currentColor"></path><path d="m30,5l40,0l0,50l20,0l-40,40l-40,-40l20,0l0,-50" fill="white"></path></svg></span><span class="woo-like-count">' + (GM_getValue('wbDl-' + (retweetPostId || postId), null) ? '已下载' : '下载') + '</span>';
+        let downloaded = !!GM_getValue('wbDl-' + (retweetPostId || postId), null);
+        renderDownloadButton(dlBtn, downloaded);
         dlBtn.addEventListener('click', async function(event) {
             event.preventDefault();
-            const dlBtnText = dlBtn.querySelector('span.woo-like-count');
-            dlBtnText.textContent = '下载中';
+            renderDownloadButton(dlBtn, downloaded, '下载中');
             const [downloadList, packName] = await handlePostDownloadById(postId);
             await handleDownloadList(downloadList, packName);
             GM_setValue('wbDl-' + (retweetPostId || postId), true);
-            dlBtnText.textContent = '已下载';
+            downloaded = true;
+            renderDownloadButton(dlBtn, downloaded);
         });
         divInDiv.appendChild(dlBtn);
         dlBtnDiv.appendChild(divInDiv);
@@ -959,12 +985,13 @@
         dlBtn.addEventListener('mouseleave', (event) => { dlBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.4)'; dlBtn.style.color = 'dimgray'; });
         dlBtn.addEventListener('click', async function(event) {
             event.stopPropagation();
-            const dlBtnText = card.querySelector('button.download-button').querySelector('span.woo-like-count');
-            dlBtnText.textContent = '下载中';
+            const mainBtn = card.querySelector('button.download-button');
+            const downloadedBefore = mainBtn ? mainBtn.dataset.downloaded === 'true' : false;
+            if (mainBtn) renderDownloadButton(mainBtn, downloadedBefore, '下载中');
             const [downloadList, packName] = await handlePostDownloadById(postId, idx);
             await handleDownloadList(downloadList, packName);
             GM_setValue('wbDl-' + (retweetPostId || postId), true);
-            dlBtnText.textContent = '已下载';
+            if (mainBtn) renderDownloadButton(mainBtn, true);
         });
         imgCtn.appendChild(dlBtn);
     }
@@ -993,16 +1020,17 @@
         aInLi.setAttribute('href', 'javascript:void(0);');
         let dlBtn = document.createElement('button');
         dlBtn.className = 'woo-like-main toolbar_btn download-button';
-        dlBtn.innerHTML = '<span class="woo-like-iconWrap"><svg class="woo-like-icon" viewBox="0 0 100 100"><path d="m25,0l50,0l0,50l25,0l-50,50l-50,-50l25,0l0,-50" fill="currentColor"></path><path d="m30,5l40,0l0,50l20,0l-40,40l-40,-40l20,0l0,-50" fill="white"></path></svg></span><span class="woo-like-count">' + (GM_getValue('wbDl-' + (retweetPostId || postId), null) ? '已下载' : '下载') + '</span>';
+        let downloaded = !!GM_getValue('wbDl-' + (retweetPostId || postId), null);
+        renderDownloadButton(dlBtn, downloaded);
         aInLi.addEventListener('click', function(event) { event.preventDefault(); });
         dlBtn.addEventListener('click', async function(event) {
             event.preventDefault();
-            const dlBtnText = dlBtn.querySelector('span.woo-like-count');
-            dlBtnText.textContent = '下载中';
+            renderDownloadButton(dlBtn, downloaded, '下载中');
             const [downloadList, packName] = await handlePostDownloadById(postId);
             await handleDownloadList(downloadList, packName);
             GM_setValue('wbDl-' + (retweetPostId || postId), true);
-            dlBtnText.textContent = '已下载';
+            downloaded = true;
+            renderDownloadButton(dlBtn, downloaded);
         });
         aInLi.appendChild(dlBtn);
         dlBtnLi.appendChild(dlBtn);
@@ -1040,12 +1068,13 @@
         dlBtn.addEventListener('mouseleave', (event) => { dlBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.4)'; dlBtn.style.color = 'dimgray'; });
         dlBtn.addEventListener('click', async function(event) {
             event.stopPropagation();
-            const dlBtnText = card.querySelector('button.download-button').querySelector('span.woo-like-count');
-            dlBtnText.textContent = '下载中';
+            const mainBtn = card.querySelector('button.download-button');
+            const downloadedBefore = mainBtn ? mainBtn.dataset.downloaded === 'true' : false;
+            if (mainBtn) renderDownloadButton(mainBtn, downloadedBefore, '下载中');
             const [downloadList, packName] = await handlePostDownloadById(postId, idx);
             await handleDownloadList(downloadList, packName);
             GM_setValue('wbDl-' + (retweetPostId || postId), true);
-            dlBtnText.textContent = '已下载';
+            if (mainBtn) renderDownloadButton(mainBtn, true);
         });
         imgCtn.appendChild(dlBtn);
     }
@@ -2041,8 +2070,9 @@
                     if (contentDom) {
                         contentDom.scrollIntoView();
                         // console.log(contentDom);
-                        const downloadButton = contentDom.querySelector('button.download-button > span.woo-like-count');
-                        if (downloadButton && ((downloadButton.textContent === '下载') || (!GM_getValue('listDownloadSkipAlreadyDownloaded', true) && (downloadButton.textContent === '已下载'))) && !(GM_getValue('listDownloadSkipRetweet', true) && contentDom.querySelector('div.retweet'))) {
+                        const downloadButton = contentDom.querySelector('button.download-button');
+                        const downloadButtonLabel = downloadButton ? downloadButton.querySelector('span.woo-like-count') : null;
+                        if (downloadButton && downloadButtonLabel && ((downloadButtonLabel.textContent === '下载') || (!GM_getValue('listDownloadSkipAlreadyDownloaded', true) && (downloadButtonLabel.textContent === '已下载'))) && !(GM_getValue('listDownloadSkipRetweet', true) && contentDom.querySelector('div.retweet'))) {
                             const postLink = contentDom.querySelector('a.head-info_time_6sFQg');
                             const postId = postLink.href.split('/')[postLink.href.split('/').length - 1];
                             let retweetPostId;
@@ -2051,11 +2081,12 @@
                                 retweetPostId = retweetPostLink.href.split('/')[retweetPostLink.href.split('/').length - 1];
                             }
                             // console.log(postId, retweetPostId);
-                            downloadButton.textContent = '下载中';
+                            const downloadedBefore = downloadButton.dataset.downloaded === 'true';
+                            renderDownloadButton(downloadButton, downloadedBefore, '下载中');
                             const [downloadList, packName] = await handlePostDownloadById(postId);
                             await handleDownloadList(downloadList, packName);
                             GM_setValue('wbDl-' + (retweetPostId || postId), true);
-                            downloadButton.textContent = '已下载';
+                            renderDownloadButton(downloadButton, true);
                             const downloadSuccess = true;
                             if (downloadSuccess) {
                                 retryAttempts = 0;
@@ -2087,8 +2118,9 @@
                     if (contentDom) {
                         contentDom.scrollIntoView();
                         // console.log(contentDom);
-                        const downloadButton = contentDom.querySelector('button.download-button > span.woo-like-count');
-                        if (downloadButton && ((downloadButton.textContent === '下载') || (!GM_getValue('listDownloadSkipAlreadyDownloaded', true) && (downloadButton.textContent === '已下载'))) && !(GM_getValue('listDownloadSkipRetweet', true) && contentDom.querySelector('div.card-comment'))) {
+                        const downloadButton = contentDom.querySelector('button.download-button');
+                        const downloadButtonLabel = downloadButton ? downloadButton.querySelector('span.woo-like-count') : null;
+                        if (downloadButton && downloadButtonLabel && ((downloadButtonLabel.textContent === '下载') || (!GM_getValue('listDownloadSkipAlreadyDownloaded', true) && (downloadButtonLabel.textContent === '已下载'))) && !(GM_getValue('listDownloadSkipRetweet', true) && contentDom.querySelector('div.card-comment'))) {
                             const postLink = contentDom.querySelector('div.from > a');
                             const postUrl = postLink.href.split('?')[0];
                             const postId = postUrl.split('/')[postUrl.split('/').length - 1];
@@ -2099,11 +2131,12 @@
                                 retweetPostId = retweetPostUrl.split('/')[retweetPostUrl.split('/').length - 1];
                             }
                             // console.log(postId, retweetPostId);
-                            downloadButton.textContent = '下载中';
+                            const downloadedBefore = downloadButton.dataset.downloaded === 'true';
+                            renderDownloadButton(downloadButton, downloadedBefore, '下载中');
                             const [downloadList, packName] = await handlePostDownloadById(postId);
                             await handleDownloadList(downloadList, packName);
                             GM_setValue('wbDl-' + (retweetPostId || postId), true);
-                            downloadButton.textContent = '已下载';
+                            renderDownloadButton(downloadButton, true);
                             const downloadSuccess = true;
                             if (downloadSuccess) {
                                 retryAttempts = 0;
