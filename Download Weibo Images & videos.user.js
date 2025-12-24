@@ -200,6 +200,25 @@
     const downloadIconFilled = '<span class="woo-like-iconWrap"><svg class="woo-like-icon" viewBox="0 0 100 100"><path d="m25,0l50,0l0,50l25,0l-50,50l-50,-50l25,0l0,-50" fill="currentColor"></path><path d="m30,5l40,0l0,50l20,0l-40,40l-40,-40l20,0l0,-50" fill="white"></path></svg></span>';
     const downloadIconOutline = '<span class="woo-like-iconWrap"><svg class="woo-like-icon" viewBox="0 0 100 100"><path d="m25,0l50,0l0,50l25,0l-50,50l-50,-50l25,0l0,-50" fill="none" stroke="currentColor" stroke-width="8"></path><path d="m30,5l40,0l0,50l20,0l-40,40l-40,-40l20,0l0,-50" fill="none" stroke="white" stroke-width="6"></path></svg></span>';
 
+    let zipInProgress = false;
+    let visibilityKeepAliveTimer = null;
+    function startVisibilityKeepAlive() {
+        if (visibilityKeepAliveTimer) return;
+        visibilityKeepAliveTimer = setInterval(() => {}, 1000);
+    }
+    function stopVisibilityKeepAlive() {
+        if (!visibilityKeepAliveTimer) return;
+        clearInterval(visibilityKeepAliveTimer);
+        visibilityKeepAliveTimer = null;
+    }
+    document.addEventListener('visibilitychange', () => {
+        if (zipInProgress && document.visibilityState === 'hidden') {
+            startVisibilityKeepAlive();
+        } else {
+            stopVisibilityKeepAlive();
+        }
+    });
+
     function renderDownloadButton(btn, downloaded, label) {
         const textLabel = label || (downloaded ? '已下载' : '下载');
         btn.innerHTML = (downloaded ? downloadIconFilled : downloadIconOutline) + '<span class="woo-like-count">' + textLabel + '</span>';
@@ -723,40 +742,41 @@
                 await send2Aria2c(item.url, item.name, item.headerFlag);
             }
         } else if (GM_getValue('zipMode', false)) {
+            zipInProgress = true;
+            if (document.visibilityState === 'hidden') startVisibilityKeepAlive();
             let zip = new JSZip();
-            // console.log('zip', zip);
-            let promises = downloadList.map(async function(ele, idx) {
-                return await downloadWrapper(ele.url, ele.name, ele.headerFlag, true).then(function(data) {
-                    // console.log(ele, idx, 'data', data);
-                    const currDate = new Date();
-                    const dateWithOffset = new Date(currDate.getTime() - currDate.getTimezoneOffset() * 60000);
-                    if (data) zip.file(downloadList[idx].name, data, { date: dateWithOffset });
+            try {
+                let promises = downloadList.map(async function(ele, idx) {
+                    return await downloadWrapper(ele.url, ele.name, ele.headerFlag, true).then(function(data) {
+                        const currDate = new Date();
+                        const dateWithOffset = new Date(currDate.getTime() - currDate.getTimezoneOffset() * 60000);
+                        if (data) zip.file(downloadList[idx].name, data, { date: dateWithOffset });
+                    });
                 });
-            });
-            // console.log('promises', promises);
-            const responseList = await Promise.all(promises);
-            // console.log('responseList', responseList);
-            // console.log('zip', zip);
-            // console.log('generateAsync', zip.generateAsync());
-            if (zip.files && Object.keys(zip.files).length > 0) {
-                downloadQueueTitle.style.display = 'block';
-                let zipProgress = downloadQueueCard.appendChild(progressBar.cloneNode(true));
-                zipProgress.firstChild.textContent = packName + ' [0%]';
-                const content = await zip.generateAsync({ type: 'blob', streamFiles: true }, function({ percent }) {
-                    const pct = Math.min(100, percent);
-                    zipProgress.style.background = 'linear-gradient(to right, green ' + pct + '%, transparent ' + pct + '%)';
-                    zipProgress.firstChild.textContent = packName + ' [' + pct.toFixed(0) + '%]';
-                });
-                const timeout = setTimeout(() => {
-                    zipProgress.remove();
-                    if(downloadQueueCard.childElementCount == 1) downloadQueueTitle.style.display = 'none';
-                }, 1000);
-                zipProgress.lastChild.onclick = function(e) {
-                    clearTimeout(timeout);
-                    this.parentNode.remove();
-                    if(downloadQueueCard.childElementCount == 1) downloadQueueTitle.style.display = 'none';
-                };
-                saveAs(content, packName);
+                await Promise.all(promises);
+                if (zip.files && Object.keys(zip.files).length > 0) {
+                    downloadQueueTitle.style.display = 'block';
+                    let zipProgress = downloadQueueCard.appendChild(progressBar.cloneNode(true));
+                    zipProgress.firstChild.textContent = packName + ' [0%]';
+                    const content = await zip.generateAsync({ type: 'blob', streamFiles: true }, function({ percent }) {
+                        const pct = Math.min(100, percent);
+                        zipProgress.style.background = 'linear-gradient(to right, green ' + pct + '%, transparent ' + pct + '%)';
+                        zipProgress.firstChild.textContent = packName + ' [' + pct.toFixed(0) + '%]';
+                    });
+                    const timeout = setTimeout(() => {
+                        zipProgress.remove();
+                        if(downloadQueueCard.childElementCount == 1) downloadQueueTitle.style.display = 'none';
+                    }, 1000);
+                    zipProgress.lastChild.onclick = function(e) {
+                        clearTimeout(timeout);
+                        this.parentNode.remove();
+                        if(downloadQueueCard.childElementCount == 1) downloadQueueTitle.style.display = 'none';
+                    };
+                    saveAs(content, packName);
+                }
+            } finally {
+                zipInProgress = false;
+                stopVisibilityKeepAlive();
             }
         } else {
             let promises = downloadList.map(function(item, idx) {
