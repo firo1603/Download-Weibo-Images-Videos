@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Download Weibo Images & Videos (Only support new version weibo UI)
 // @name:zh-CN   下载微博图片和视频（仅支持新版界面）
-// @version      1.3.8.1
+// @version      1.3.8.2
 // @description  Download images and videos from new version weibo UI webpage.
 // @description:zh-CN 从新版微博界面下载图片和视频。
 // @author       OWENDSWANG
@@ -736,6 +736,41 @@
         return setName.replace(/[<|>|*|"|\/|\|:|?|\n]/g, '_');
     }
 
+    function createZipWorker() {
+        const workerCode = `
+self.importScripts('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.9.1/jszip.min.js');
+self.onmessage = async (e) => {
+    const { entries } = e.data || {};
+    if (!entries || !Array.isArray(entries)) {
+        self.postMessage({ type: 'error', message: 'no entries' });
+        return;
+    }
+    try {
+        const zip = new JSZip();
+        for (const item of entries) {
+            zip.file(item.name, item.buffer, { date: item.mtime ? new Date(item.mtime) : new Date() });
+        }
+        const blob = await zip.generateAsync(
+            {
+                type: 'blob',
+                streamFiles: true,
+                compression: 'STORE',
+                compressionOptions: { level: 0 }
+            },
+            (metadata) => {
+                self.postMessage({ type: 'progress', percent: metadata.percent || 0, currentFile: metadata.currentFile });
+            }
+        );
+        self.postMessage({ type: 'done', blob });
+    } catch (err) {
+        self.postMessage({ type: 'error', message: err && err.message ? err.message : String(err) });
+    }
+};
+`;
+        const blob = new Blob([workerCode], { type: 'application/javascript' });
+        return new Worker(URL.createObjectURL(blob));
+    }
+
     async function handleDownloadList(downloadList, packName) {
         if (GM_getValue('ariaMode', false)) {
             for (const item of downloadList) {
@@ -743,40 +778,75 @@
             }
         } else if (GM_getValue('zipMode', false)) {
             zipInProgress = true;
-            if (document.visibilityState === 'hidden') startVisibilityKeepAlive();
-            let zip = new JSZip();
+            const currDate = new Date();
+            const dateWithOffset = new Date(currDate.getTime() - currDate.getTimezoneOffset() * 60000);
+            downloadQueueTitle.style.display = 'block';
+            const packProgress = downloadQueueCard.appendChild(progressBar.cloneNode(true));
+            packProgress.firstChild.textContent = packName + ' [0%]';
+
+            const files = await Promise.all(downloadList.map(async function(ele) {
+                const data = await downloadWrapper(ele.url, ele.name, ele.headerFlag, true);
+                if (!data) return null;
+                const buffer = await data.arrayBuffer();
+                return { name: ele.name, buffer, mtime: dateWithOffset.getTime() };
+            }));
+            const entries = files.filter(Boolean);
+
+            if (entries.length === 0) {
+                packProgress.remove();
+                if(downloadQueueCard.childElementCount == 1) downloadQueueTitle.style.display = 'none';
+                zipInProgress = false;
+                return;
+            }
+
+            const worker = createZipWorker();
+            let workerCanceled = false;
+            const transferList = entries.map((item) => item.buffer);
+
             try {
-                let promises = downloadList.map(async function(ele, idx) {
-                    return await downloadWrapper(ele.url, ele.name, ele.headerFlag, true).then(function(data) {
-                        const currDate = new Date();
-                        const dateWithOffset = new Date(currDate.getTime() - currDate.getTimezoneOffset() * 60000);
-                        if (data) zip.file(downloadList[idx].name, data, { date: dateWithOffset });
-                    });
-                });
-                await Promise.all(promises);
-                if (zip.files && Object.keys(zip.files).length > 0) {
-                    downloadQueueTitle.style.display = 'block';
-                    let zipProgress = downloadQueueCard.appendChild(progressBar.cloneNode(true));
-                    zipProgress.firstChild.textContent = packName + ' [0%]';
-                    const content = await zip.generateAsync({ type: 'blob', streamFiles: true }, function({ percent }) {
-                        const pct = Math.min(100, percent);
-                        zipProgress.style.background = 'linear-gradient(to right, green ' + pct + '%, transparent ' + pct + '%)';
-                        zipProgress.firstChild.textContent = packName + ' [' + pct.toFixed(0) + '%]';
-                    });
-                    const timeout = setTimeout(() => {
-                        zipProgress.remove();
-                        if(downloadQueueCard.childElementCount == 1) downloadQueueTitle.style.display = 'none';
-                    }, 1000);
-                    zipProgress.lastChild.onclick = function(e) {
-                        clearTimeout(timeout);
-                        this.parentNode.remove();
-                        if(downloadQueueCard.childElementCount == 1) downloadQueueTitle.style.display = 'none';
+                const content = await new Promise((resolve, reject) => {
+                    worker.onmessage = (event) => {
+                        const { type, percent, blob, message } = event.data || {};
+                        if (type === 'progress') {
+                            const pct = percent || 0;
+                            packProgress.style.background = 'linear-gradient(to right, green ' + pct.toFixed(0) + '%, transparent ' + pct.toFixed(0) + '%)';
+                            packProgress.firstChild.textContent = packName + ' [' + pct.toFixed(0) + '%]';
+                        } else if (type === 'done') {
+                            worker.terminate();
+                            resolve(workerCanceled ? null : blob);
+                        } else if (type === 'error') {
+                            worker.terminate();
+                            reject(new Error(message || 'zip worker error'));
+                        }
                     };
+                    worker.onerror = (err) => {
+                        worker.terminate();
+                        reject(new Error(err.message || 'zip worker error'));
+                    };
+                    worker.postMessage({ entries }, transferList);
+                }).catch((err) => {
+                    packProgress.style.background = 'red';
+                    packProgress.firstChild.textContent = packName + ' [error: ' + err.message + ']';
+                    return null;
+                });
+
+                if (content) {
                     saveAs(content, packName);
                 }
             } finally {
                 zipInProgress = false;
                 stopVisibilityKeepAlive();
+                const timeout = setTimeout(() => {
+                    packProgress.remove();
+                    if(downloadQueueCard.childElementCount == 1) downloadQueueTitle.style.display = 'none';
+                }, 1000);
+                packProgress.lastChild.onclick = function(e) {
+                    workerCanceled = true;
+                    worker.terminate();
+                    clearTimeout(timeout);
+                    this.parentNode.remove();
+                    if(downloadQueueCard.childElementCount == 1) downloadQueueTitle.style.display = 'none';
+                };
             }
         } else {
             let promises = downloadList.map(function(item, idx) {
