@@ -1068,11 +1068,19 @@ self.onmessage = async (e) => {
         return [downloadList, packName, textContent];
     }
 
+    const homeMediaSelector = 'div.woo-picture-slot img,img.woo-picture-img,img.picture_focusImg_1z5In,img[class*="focusImg"],img[class*="picture-viewer_pic"],video[class*="picture-viewer_pic"],img[class*="_pic_"]';
+
+    function isViewerMedia(ele) {
+        const cls = ele && typeof ele.className === 'string' ? ele.className : '';
+        return cls.includes('picture-viewer_pic') || cls.includes('_pic_');
+    }
+
     function addDlBtn(card) {
         // console.log('add download button');
         const footer = card.querySelectorAll('footer')[1] || card.querySelector('footer');
         const header = card.querySelector('header');
-        const postLink = header.querySelector('.head-info_time_6sFQg,._time_1tpft_33');
+        const postLink = header ? header.querySelector('.head-info_time_6sFQg,._time_1tpft_33,a[class*="head-info_time"],a[class*="_time_"]') : null;
+        if (!footer || !postLink || !postLink.href) return;
         const postId = postLink.href.split('/')[postLink.href.split('/').length - 1];
         let retweetPostId;
         const retweetPostLink = card.querySelector('div.retweet a.head-info_time_6sFQg, div.retweet a._time_1t79r_33');
@@ -1101,7 +1109,9 @@ self.onmessage = async (e) => {
         });
         divInDiv.appendChild(dlBtn);
         dlBtnDiv.appendChild(divInDiv);
-        footer.querySelector('div > div > div').appendChild(dlBtnDiv);
+        const toolbar = footer.querySelector('div > div > div') || footer.querySelector('div.woo-box-flex > div.woo-box-item-flex > div');
+        if (!toolbar) return;
+        toolbar.appendChild(dlBtnDiv);
         // console.log('added download button');
     }
 
@@ -1109,9 +1119,12 @@ self.onmessage = async (e) => {
         // console.log('addSingleDlBtn: ', img);
         const card = img.closest('article.woo-panel-main');
         const imgCtn = img.parentElement;
+        if (!card || !imgCtn) return;
         const dlBtn = document.createElement('div');
+        dlBtn.className = 'download-single-button';
         const header = card.getElementsByTagName('header')[0];
-        const postLink = header.querySelector('.head-info_time_6sFQg,._time_1tpft_33');
+        const postLink = header ? header.querySelector('.head-info_time_6sFQg,._time_1tpft_33,a[class*="head-info_time"],a[class*="_time_"]') : null;
+        if (!postLink || !postLink.href) return;
         const postId = postLink.href.split('/')[postLink.href.split('/').length - 1];
         let retweetPostId;
         const retweetPostLink = card.querySelector('div.retweet a.head-info_time_6sFQg, div.retweet a._time_1t79r_33');
@@ -1182,7 +1195,7 @@ self.onmessage = async (e) => {
             renderDownloadButton(dlBtn, downloaded);
         });
         aInLi.appendChild(dlBtn);
-        dlBtnLi.appendChild(dlBtn);
+        dlBtnLi.appendChild(aInLi);
         footer.firstChild.appendChild(dlBtnLi);
         // console.log('added download button');
     }
@@ -1190,7 +1203,9 @@ self.onmessage = async (e) => {
     function sAddSingleDlBtn(img, idx = 0) {
         // console.log(img);
         const card = img.closest('div.card-wrap');
+        if (!card) return;
         const from = card.querySelector('div.from > a');
+        if (!from || !from.href) return;
         const postUrl = from.href.split('?')[0];
         const postId = postUrl.split('/')[postUrl.split('/').length - 1];
         let retweetPostId;
@@ -1200,7 +1215,9 @@ self.onmessage = async (e) => {
             retweetPostId = retweetPostUrl.split('/')[retweetPostUrl.split('/').length - 1];
         }
         const imgCtn = img.parentElement;
+        if (!imgCtn) return;
         const dlBtn = document.createElement('div');
+        dlBtn.className = 'download-single-button';
         dlBtn.style.color = 'dimgray';
         dlBtn.style.position = 'absolute';
         dlBtn.style.bottom = '0';
@@ -1297,7 +1314,7 @@ self.onmessage = async (e) => {
     function handleCard(card) {
         // console.log(card);
         const footer = card.querySelectorAll('footer')[1] || card.querySelector('footer');
-        const imgs = card.querySelectorAll('img.woo-picture-img,img.picture_focusImg_1z5In,img._focusImg_a2k8z_23,img.picture-viewer_pic_37YQ3,video.picture-viewer_pic_37YQ3,img._pic_1jk00_34');
+        const imgs = card.querySelectorAll(homeMediaSelector);
         // console.log(imgs);
         if (footer) {
             if (footer.getElementsByClassName('download-button').length > 0) {
@@ -2149,12 +2166,13 @@ self.onmessage = async (e) => {
                 // console.log(mutation.target);
                 if (mutation.type === 'childList' && mutation.target.tagName === 'DIV' && (mutation.target.className.includes('wbpro-feed-content') || mutation.target.className.includes('Feed_retweet_JqZJb'))) {
                     for (const node of mutation.addedNodes) {
+                        if (!(node instanceof Element)) continue;
                         // console.log(node);
-                        const imgs = node.querySelectorAll('img.woo-picture-img,img.picture_focusImg_1z5In,img._focusImg_a2k8z_23,img.picture-viewer_pic_37YQ3,video.picture-viewer_pic_37YQ3,img._pic_1jk00_34');
+                        const imgs = node.querySelectorAll(homeMediaSelector);
                         // console.log(imgs);
                         for (const [ idx, img ] of Object.entries(imgs)) {
                             if (img.parentElement.getElementsByClassName('download-single-button').length === 0) {
-                                if (img.className.includes('picture-viewer_pic_37YQ3') || img.className.includes('_pic_1jk00_34')) {
+                                if (isViewerMedia(img)) {
                                     // console.log('enlarged img: ',img);
                                     const previews = node.querySelectorAll('div.picture-viewer_preview_2wOSq,div._preview_1jk00_47');
                                     for (const [ index, preview ] of Object.entries(previews)) {
